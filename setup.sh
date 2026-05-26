@@ -184,7 +184,24 @@ install_skills "$HOME/.claude/skills" "~/.claude/skills/ (wiki-update, wiki-quer
 install_skills "$HOME/.gemini/skills"             "~/.gemini/skills/ (Gemini CLI)"
 install_skills "$HOME/.gemini/antigravity/skills" "~/.gemini/antigravity/skills/ (Antigravity, legacy)"
 install_skills "$HOME/.codex/skills"              "~/.codex/skills/"
-install_skills "$HOME/.hermes/skills"             "~/.hermes/skills/ (Hermes)"
+install_skills "$HOME/.hermes/skills"             "~/.hermes/skills/ (Hermes default)"
+# Hermes: active named profile (if $HERMES_HOME points to a non-default location)
+if [ -n "$HERMES_HOME" ] && [ "$HERMES_HOME" != "$HOME/.hermes" ]; then
+  install_skills "$HERMES_HOME/skills" "$HERMES_HOME/skills/ (Hermes active profile: $(basename "$HERMES_HOME"))"
+fi
+# Hermes: all named profiles under ~/.hermes/profiles/
+if [ -d "$HOME/.hermes/profiles" ]; then
+  for _hermes_profile_dir in "$HOME/.hermes/profiles"/*/; do
+    [ -d "$_hermes_profile_dir" ] || continue
+    _hermes_profile_name="$(basename "$_hermes_profile_dir")"
+    # Skip if already handled via $HERMES_HOME above
+    if [ -n "$HERMES_HOME" ] && [ "$HERMES_HOME" = "${_hermes_profile_dir%/}" ]; then
+      continue
+    fi
+    install_skills "${_hermes_profile_dir}skills" \
+      "~/.hermes/profiles/${_hermes_profile_name}/skills/ (Hermes profile: ${_hermes_profile_name})"
+  done
+fi
 install_skills "$HOME/.openclaw/skills"           "~/.openclaw/skills/ (OpenClaw managed)"
 install_skills "$HOME/.copilot/skills"            "~/.copilot/skills/ (GitHub Copilot CLI)"
 install_skills "$HOME/.trae/skills"               "~/.trae/skills/ (Trae)"
