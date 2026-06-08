@@ -210,7 +210,92 @@ install_skills "$HOME/.kiro/skills"               "~/.kiro/skills/ (Kiro CLI)"
 install_skills "$HOME/.pi/agent/skills"           "~/.pi/agent/skills/ (Pi)"
 install_skills "$HOME/.agents/skills"             "~/.agents/skills/ (OpenCode, Aider, Droid, generic)"
 
-# ── Step 4: Summary ──────────────────────────────────────────
+# ── Step 4: GitHub sync (optional) ───────────────────────────
+SYNC_CONFIGURED=false
+VAULT_REMOTE=""
+
+echo ""
+read -p "  Set up GitHub sync for your vault? [y/N]: " SETUP_SYNC || true
+if [[ "$SETUP_SYNC" =~ ^[Yy]$ ]]; then
+  read -p "  GitHub repo URL (e.g. https://github.com/you/my-wiki.git): " VAULT_REMOTE || true
+  if [ -n "$VAULT_REMOTE" ] && [ -n "$VAULT_PATH" ] && [ -d "$VAULT_PATH" ]; then
+    # Init git repo in vault if needed
+    if [ ! -d "$VAULT_PATH/.git" ]; then
+      git -C "$VAULT_PATH" init -q
+      echo "✅  Initialized git repo in vault"
+    fi
+    # Create .gitignore if missing
+    if [ ! -f "$VAULT_PATH/.gitignore" ]; then
+      cat > "$VAULT_PATH/.gitignore" <<'GITIGNORE'
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
+.obsidian/cache
+.trash/
+GITIGNORE
+      echo "✅  Created .gitignore in vault"
+    fi
+    # Add or update remote
+    if git -C "$VAULT_PATH" remote get-url origin &>/dev/null 2>&1; then
+      git -C "$VAULT_PATH" remote set-url origin "$VAULT_REMOTE"
+    else
+      git -C "$VAULT_PATH" remote add origin "$VAULT_REMOTE"
+    fi
+    echo "✅  Git remote → $VAULT_REMOTE"
+    # Persist remote in global config
+    echo "VAULT_GITHUB_REMOTE=\"$VAULT_REMOTE\"" >> "$GLOBAL_CONFIG"
+    # Write ~/.obsidian-wiki/sync.sh
+    cat > "$GLOBAL_CONFIG_DIR/sync.sh" <<'SYNC_SCRIPT'
+#!/bin/bash
+# wiki-sync — commit and push vault changes to GitHub
+set -e
+# shellcheck source=/dev/null
+source "$HOME/.obsidian-wiki/config" 2>/dev/null || true
+VAULT="${OBSIDIAN_VAULT_PATH:-}"
+[ -d "$VAULT" ] || { echo "wiki-sync: vault not found at '$VAULT'" >&2; exit 1; }
+cd "$VAULT"
+git add -A
+if git diff --cached --quiet; then
+  echo "wiki-sync: nothing to commit"
+  exit 0
+fi
+git commit -m "sync $(date '+%Y-%m-%d %H:%M')"
+git push
+echo "wiki-sync: pushed to $(git remote get-url origin)"
+SYNC_SCRIPT
+    chmod +x "$GLOBAL_CONFIG_DIR/sync.sh"
+    echo "✅  Wrote ~/.obsidian-wiki/sync.sh"
+    SYNC_CONFIGURED=true
+
+    # Offer shell alias
+    echo ""
+    read -p "  Add 'wiki-sync' alias to your shell? [Y/n]: " ADD_ALIAS || true
+    if [[ ! "$ADD_ALIAS" =~ ^[Nn]$ ]]; then
+      SHELL_RC=""
+      [ -f "$HOME/.zshrc" ]  && SHELL_RC="$HOME/.zshrc"
+      [ -z "$SHELL_RC" ] && [ -f "$HOME/.bashrc" ] && SHELL_RC="$HOME/.bashrc"
+      if [ -n "$SHELL_RC" ]; then
+        if ! grep -q "wiki-sync" "$SHELL_RC"; then
+          printf '\n# wiki-sync — push Obsidian vault to GitHub\nalias wiki-sync='"'"'~/.obsidian-wiki/sync.sh'"'"'\n' >> "$SHELL_RC"
+          echo "✅  Added wiki-sync alias to $SHELL_RC"
+          echo "    → Run: source $SHELL_RC  (or open a new terminal)"
+        else
+          echo "    ℹ️  wiki-sync alias already in $SHELL_RC"
+        fi
+      fi
+    fi
+
+    # Offer hourly cron
+    echo ""
+    read -p "  Enable hourly auto-sync (cron)? [y/N]: " ADD_CRON || true
+    if [[ "$ADD_CRON" =~ ^[Yy]$ ]]; then
+      CRON_LINE="0 * * * * $GLOBAL_CONFIG_DIR/sync.sh >> $GLOBAL_CONFIG_DIR/sync.log 2>&1"
+      ( crontab -l 2>/dev/null; echo "$CRON_LINE" ) | sort -u | crontab -
+      echo "✅  Hourly cron installed  (logs: ~/.obsidian-wiki/sync.log)"
+    fi
+  fi
+fi
+
+# ── Step 5: Summary ──────────────────────────────────────────
 SKILL_COUNT=$(echo "$SKILLS_DIR"/*/  | tr ' ' '\n' | grep -c /)
 
 echo ""
@@ -221,6 +306,9 @@ echo " Skills found:    $SKILL_COUNT"
 echo " Agents ready:    Claude Code, Cursor, Windsurf, Gemini CLI, Antigravity,"
 echo "                  Codex, Hermes, OpenClaw, OpenCode, Aider, Factory Droid,"
 echo "                  Trae, Trae CN, Kiro, Pi, GitHub Copilot (CLI + VS Code Chat)"
+if $SYNC_CONFIGURED; then
+echo " GitHub sync:     wiki-sync  (script: ~/.obsidian-wiki/sync.sh)"
+fi
 echo ""
 echo " Bootstrap files:"
 echo "   CLAUDE.md                            → Claude Code"
@@ -240,6 +328,9 @@ echo "   2. Say: \"Set up my wiki\""
 echo ""
 echo " From any other project:"
 echo "   /wiki-update    → sync knowledge into your vault"
-echo "   /wiki-query    → ask questions against your wiki"
+echo "   /wiki-query     → ask questions against your wiki"
+if $SYNC_CONFIGURED; then
+echo "   wiki-sync       → push all vault changes to GitHub"
+fi
 echo "───────────────────────────────────────────────────"
 echo ""

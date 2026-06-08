@@ -298,6 +298,48 @@ The directory is created automatically by `wiki-setup`. The path is configurable
 
 ---
 
+## Syncing your vault to GitHub
+
+Your vault is a directory of plain markdown files — push it to a private GitHub repo and you get version history, backup, and cross-device sync for free. `setup.sh` (and `obsidian-wiki setup`) will ask you to configure this during the initial install.
+
+**What setup does:**
+
+1. `git init` your vault if it isn't already a repo
+2. Creates a `.gitignore` that excludes Obsidian workspace/cache files
+3. Sets the GitHub remote you supply
+4. Writes `~/.obsidian-wiki/sync.sh` — a one-shot script that stages all changes, commits with a timestamp, and pushes
+5. Optionally adds a `wiki-sync` shell alias
+6. Optionally installs an hourly cron job
+
+**Run a sync at any time:**
+
+```bash
+wiki-sync                    # alias added by setup
+~/.obsidian-wiki/sync.sh     # or call the script directly
+```
+
+Each run commits staged changes as `sync 2026-06-08 14:00` and pushes.
+
+**Manual setup (skip the prompt):**
+
+```bash
+cd /path/to/your/vault
+git init
+git remote add origin https://github.com/you/my-wiki.git
+
+# then commit and push manually, or re-run setup.sh to get the sync script
+```
+
+**Hourly auto-sync via cron (can be enabled during setup):**
+
+```
+0 * * * * ~/.obsidian-wiki/sync.sh >> ~/.obsidian-wiki/sync.log 2>&1
+```
+
+> Keep the repo **private** if your vault contains personal notes. Nothing is sent to any third-party service — your vault lives on your machines and your GitHub account only.
+
+---
+
 ## Skills
 
 Everything lives in `.skills/`. Each skill is a markdown file the agent reads when triggered:
