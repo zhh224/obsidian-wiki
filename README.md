@@ -23,7 +23,7 @@ We built a framework around that idea. Every skill is a markdown file that any A
 
 ```bash
 pip install obsidian-wiki
-obsidian-wiki setup --vault /path/to/your/vault
+obsidian-wiki setup --vault /path/to/your/digital/brain
 ```
 
 `obsidian-wiki setup` writes the config to `~/.obsidian-wiki/config` and installs every wiki skill into all your AI agents (Claude Code, Cursor, Codex, Gemini, Hermes, Pi, and more). Skills are symlinked to the installed package, so `pip install -U obsidian-wiki` upgrades them everywhere — just re-run `obsidian-wiki setup` to pick up new skills. Then open a project in your agent and say **"set up my wiki"**.
@@ -35,7 +35,7 @@ obsidian-wiki setup --project . # also drop project-local skills + AGENTS.md int
 obsidian-wiki setup --copy      # copy skill files instead of symlinking
 ```
 
-`OBSIDIAN_VAULT_PATH` is just any directory where you want your wiki documents to live — a new empty folder or an existing Obsidian vault. Omit `--vault` to be prompted (or set it later in `~/.obsidian-wiki/config`).
+`OBSIDIAN_VAULT_PATH` is just any directory where you want your digital brain to live, a new empty folder or an existing Obsidian vault. Omit `--vault` to be prompted (or set it later in `~/.obsidian-wiki/config`).
 
 ### Install via Skills CLI
 
@@ -55,9 +55,7 @@ cd obsidian-wiki
 bash setup.sh
 ```
 
-`setup.sh` asks for your vault path, writes the config to `~/.obsidian-wiki/config`, symlinks skills into all your agents, and installs `wiki-update` globally so you can use it from any project.
-
-`OBSIDIAN_VAULT_PATH` is just any directory where you want your wiki documents to live. It can be a new empty folder or an existing Obsidian vault. Obsidian will read from it directly.
+`setup.sh` asks for your vault (path to your digital brain) path, writes the config to `~/.obsidian-wiki/config`, symlinks skills into all your agents, and installs `wiki-update` globally so you can use it from any project.
 
 Open the project in your agent and say **"set up my wiki"**. That's it.
 
