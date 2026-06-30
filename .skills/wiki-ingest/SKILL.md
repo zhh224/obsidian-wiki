@@ -94,6 +94,33 @@ This keeps faith with the "immutable raw layer" principle in `llm-wiki/SKILL.md`
 
 ## The Ingest Process
 
+### Step 0: Batch Planning for Large Folders
+
+**GUARD: Only run this step when the source is a directory with more than 20 files.** For single files, small folders, or `_raw/` mode, skip directly to Step 1.
+
+When the source is a large directory of docs, plan the parallel dispatch first:
+
+```bash
+obsidian-wiki batch-plan "$OBSIDIAN_VAULT_PATH" <source-dir> --pretty
+```
+
+This outputs a JSON plan with `batches` (each a list of files + total_bytes + kind counts) and `stats` (total, to_ingest, skipped_unchanged).
+
+**What to do with the plan:**
+
+1. **Check `stats.skipped_unchanged`** — report to the user how many files are being skipped (already ingested, hash unchanged).
+2. **If `batch_count == 0`** — all files are unchanged. Tell the user and stop.
+3. **If `batch_count == 1`** — proceed with the single batch as a normal Step 1 ingest.
+4. **If `batch_count > 1`** — dispatch each batch as a **parallel subagent** (multiple Agent tool calls in a single message). Each subagent receives a message like:
+   ```
+   Ingest these files into the wiki at $OBSIDIAN_VAULT_PATH using wiki-ingest Step 1 onward:
+   <list of file paths from this batch>
+   Skip batch-plan — these files are already partitioned.
+   ```
+   Wait for all subagents to complete, then run `/cross-linker` once to wire cross-references across all batches.
+
+**Fallback** (if `obsidian-wiki` is not installed): process files sequentially in groups of 15.
+
 ### Step 1: Read the Source
 
 Read the source(s) the user wants to ingest. In append mode, skip files the manifest says are already ingested and unchanged. Supported formats:

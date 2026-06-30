@@ -349,6 +349,28 @@ def cmd_setup(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_batch_plan(args: argparse.Namespace) -> int:
+    from obsidian_wiki.batch import plan_batches
+    source_dir = Path(args.source_dir).expanduser().resolve()
+    vault = Path(args.vault).expanduser().resolve()
+    if not source_dir.is_dir():
+        print(f"error: source directory not found: {source_dir}", file=sys.stderr)
+        return 1
+    result = plan_batches(
+        source_dir,
+        vault,
+        max_batch_mb=args.max_mb,
+        max_batch_files=args.max_files,
+        skip_unchanged=not args.no_cache,
+        include_code=args.include_code,
+    )
+    if args.pretty:
+        print(json.dumps(result, indent=2))
+    else:
+        print(json.dumps(result))
+    return 0
+
+
 def cmd_graph_analyse(args: argparse.Namespace) -> int:
     from obsidian_wiki.graph_analysis import analyse_vault
     vault = Path(args.vault).expanduser().resolve()
@@ -468,6 +490,19 @@ def build_parser() -> argparse.ArgumentParser:
 
     ip = sub.add_parser("info", help="show install paths, version, and config")
     ip.set_defaults(func=cmd_info)
+
+    bp = sub.add_parser(
+        "batch-plan",
+        help="split a source directory into parallel-ingest batches, skipping unchanged files",
+    )
+    bp.add_argument("vault", help="path to the Obsidian vault")
+    bp.add_argument("source_dir", help="directory of source documents to ingest")
+    bp.add_argument("--max-mb", type=float, default=2.0, help="max MB per batch (default: 2)")
+    bp.add_argument("--max-files", type=int, default=20, help="max files per batch (default: 20)")
+    bp.add_argument("--no-cache", action="store_true", help="disable manifest-based skip of unchanged files")
+    bp.add_argument("--include-code", action="store_true", help="include code files (default: excluded; use ast-extract instead)")
+    bp.add_argument("--pretty", action="store_true", help="pretty-print JSON output")
+    bp.set_defaults(func=cmd_batch_plan)
 
     ga = sub.add_parser(
         "graph-analyse",
