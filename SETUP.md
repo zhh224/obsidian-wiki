@@ -11,7 +11,7 @@ pip install obsidian-wiki
 obsidian-wiki setup --vault /path/to/your/vault
 ```
 
-This does everything `setup.sh` does without a clone: writes `~/.obsidian-wiki/config` and installs every skill into all supported agents' skills directories (symlinked to the installed package, so `pip install -U obsidian-wiki` upgrades them everywhere). Add `--project .` to also drop project-local skills and the `AGENTS.md` / rule files into the current repo, or `--copy` to copy skill files instead of symlinking. Run `obsidian-wiki info` to see resolved paths.
+This does everything `setup.sh` does without a clone: writes `~/.obsidian-wiki/config` and installs the bundled skills into your selected global agents' skills directories. The default target set is `claude,codex`; pass `--agents claude,codex,gemini` (or any supported comma-separated subset) when you want more. Skills are symlinked to the installed package, so `pip install -U obsidian-wiki` upgrades them everywhere. Add `--project .` to also drop project-local skills and the `AGENTS.md` / rule files into the current repo, or `--copy` to copy skill files instead of symlinking. Run `obsidian-wiki info` to see resolved paths.
 
 Useful local commands after setup:
 

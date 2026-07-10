@@ -38,7 +38,7 @@ pip install obsidian-wiki
 obsidian-wiki setup --vault /path/to/your/digital/brain
 ```
 
-`obsidian-wiki setup` writes the config to `~/.obsidian-wiki/config` and installs every wiki skill into all your AI agents (Claude Code, Cursor, Codex, Gemini, Hermes, Pi, and more). Skills are symlinked to the installed package, so `pip install -U obsidian-wiki` upgrades them everywhere — just re-run `obsidian-wiki setup` to pick up new skills. Then open a project in your agent and say **"set up my wiki"**.
+`obsidian-wiki setup` writes the config to `~/.obsidian-wiki/config` and installs the bundled wiki skills into your selected global agents. The default target set is `claude,codex`; pass `--agents claude,codex,gemini` (or any supported comma-separated subset) when you want more. Skills are symlinked to the installed package, so `pip install -U obsidian-wiki` upgrades them everywhere — just re-run `obsidian-wiki setup` to pick up new skills. Then open a project in your agent and say **"set up my wiki"**.
 
 ```bash
 obsidian-wiki list              # list the bundled skills
@@ -46,6 +46,7 @@ obsidian-wiki info              # show install paths, version, and config
 obsidian-wiki doctor            # health-check config, vault shape, and installed skills
 obsidian-wiki query "rate limiting"  # query the configured vault from the terminal
 obsidian-wiki lint              # lint the configured vault for broken links / metadata gaps
+obsidian-wiki setup --agents claude,codex,gemini # choose which global agents get the shared skills
 obsidian-wiki setup --project . # also drop project-local skills + AGENTS.md into the current repo
 obsidian-wiki setup --copy      # copy skill files instead of symlinking
 ```

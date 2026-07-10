@@ -13,6 +13,8 @@ import argparse
 import json
 import os
 import shutil
+import stat
+import subprocess
 import sys
 from pathlib import Path
 
@@ -21,6 +23,7 @@ from obsidian_wiki import __version__
 HOME = Path.home()
 GLOBAL_CONFIG_DIR = HOME / ".obsidian-wiki"
 GLOBAL_CONFIG = GLOBAL_CONFIG_DIR / "config"
+DEFAULT_GLOBAL_AGENTS = ("claude", "codex")
 
 # Skills usable from any project (no vault context needed beyond the global
 # config). These are also installed globally for agents that only scope skills
@@ -67,6 +70,42 @@ def list_skills() -> list[str]:
 
 
 # ── Skill installation ───────────────────────────────────────────────────────
+def _link_skill(link_path: Path, skill: Path) -> None:
+    try:
+        link_path.symlink_to(skill, target_is_directory=True)
+    except OSError as exc:
+        if os.name != "nt" or getattr(exc, "winerror", None) not in {5, 1314}:
+            raise
+
+        result = subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(link_path), str(skill)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise OSError(
+                f"failed to create junction for {link_path} -> {skill}: "
+                f"{result.stderr.strip() or result.stdout.strip()}"
+            ) from exc
+
+
+def _is_reparse_dir(path: Path) -> bool:
+    if not path.is_dir() or os.name != "nt":
+        return False
+    attrs = getattr(path.stat(follow_symlinks=False), "st_file_attributes", 0)
+    return bool(attrs & stat.FILE_ATTRIBUTE_REPARSE_POINT)
+
+
+def _remove_existing_skill_path(path: Path) -> None:
+    if path.is_file() or path.is_symlink():
+        path.unlink()
+    elif _is_reparse_dir(path):
+        os.rmdir(path)
+    elif path.is_dir():
+        shutil.rmtree(path)
+
+
 def install_skills(
     target_dir: Path,
     label: str,
@@ -85,19 +124,17 @@ def install_skills(
             continue
         link_path = target_dir / name
 
-        if link_path.is_symlink() or link_path.is_file():
-            link_path.unlink()
-        elif link_path.is_dir():
-            # A real directory we previously copied here is safe to replace;
-            # anything else is the user's and we leave it alone.
-            if (link_path / "SKILL.md").exists():
-                shutil.rmtree(link_path)
-            else:
-                print(f"   ⚠️  {link_path} is not a managed skill, skipping")
-                continue
+        if link_path.exists() or link_path.is_symlink():
+            if link_path.is_dir() and not _is_reparse_dir(link_path):
+                # A real directory we previously copied here is safe to replace;
+                # anything else is the user's and we leave it alone.
+                if not (link_path / "SKILL.md").exists():
+                    print(f"   ⚠️  {link_path} is not a managed skill, skipping")
+                    continue
+            _remove_existing_skill_path(link_path)
 
         if mode == "symlink":
-            link_path.symlink_to(skill, target_is_directory=True)
+            _link_skill(link_path, skill)
         else:  # copy
             shutil.copytree(skill, link_path)
 
@@ -113,26 +150,62 @@ def install_skills(
 # Agents whose skills directory lives under $HOME. (path-under-home, label,
 # subset). All get every skill — pip users have no cloned repo to host
 # project-scoped skills, so everything must be globally discoverable.
-GLOBAL_AGENT_DIRS: list[tuple[str, str, tuple[str, ...] | None]] = [
-    (".claude/skills", "~/.claude/skills/ (Claude Code)", None),
-    (".gemini/skills", "~/.gemini/skills/ (Gemini CLI)", None),
-    (".gemini/antigravity/skills", "~/.gemini/antigravity/skills/ (Antigravity, legacy)", None),
-    (".codex/skills", "~/.codex/skills/ (Codex)", None),
-    (".hermes/skills", "~/.hermes/skills/ (Hermes default)", None),
-    (".openclaw/skills", "~/.openclaw/skills/ (OpenClaw)", None),
-    (".copilot/skills", "~/.copilot/skills/ (GitHub Copilot CLI)", None),
-    (".trae/skills", "~/.trae/skills/ (Trae)", None),
-    (".trae-cn/skills", "~/.trae-cn/skills/ (Trae CN)", None),
-    (".kiro/skills", "~/.kiro/skills/ (Kiro CLI)", None),
-    (".pi/agent/skills", "~/.pi/agent/skills/ (Pi)", None),
-    (".agents/skills", "~/.agents/skills/ (OpenCode, Aider, Droid, generic)", None),
+GLOBAL_AGENT_DIRS: list[tuple[str, str, str, tuple[str, ...] | None]] = [
+    ("claude", ".claude/skills", "~/.claude/skills/ (Claude Code)", None),
+    ("gemini", ".gemini/skills", "~/.gemini/skills/ (Gemini CLI)", None),
+    ("gemini-antigravity", ".gemini/antigravity/skills", "~/.gemini/antigravity/skills/ (Antigravity, legacy)", None),
+    ("codex", ".codex/skills", "~/.codex/skills/ (Codex)", None),
+    ("hermes", ".hermes/skills", "~/.hermes/skills/ (Hermes default)", None),
+    ("openclaw", ".openclaw/skills", "~/.openclaw/skills/ (OpenClaw)", None),
+    ("copilot", ".copilot/skills", "~/.copilot/skills/ (GitHub Copilot CLI)", None),
+    ("trae", ".trae/skills", "~/.trae/skills/ (Trae)", None),
+    ("trae-cn", ".trae-cn/skills", "~/.trae-cn/skills/ (Trae CN)", None),
+    ("kiro", ".kiro/skills", "~/.kiro/skills/ (Kiro CLI)", None),
+    ("pi", ".pi/agent/skills", "~/.pi/agent/skills/ (Pi)", None),
+    ("agents", ".agents/skills", "~/.agents/skills/ (OpenCode, Aider, Droid, generic)", None),
 ]
 
 
-def install_global_skills(mode: str) -> None:
-    for rel, label, subset in GLOBAL_AGENT_DIRS:
+def _normalize_agent_selection(raw: str | None) -> tuple[str, ...]:
+    aliases = {name for name, _rel, _label, _subset in GLOBAL_AGENT_DIRS}
+    if raw is None:
+        return DEFAULT_GLOBAL_AGENTS
+    selected = tuple(part.strip().lower() for part in raw.split(",") if part.strip())
+    unknown = [name for name in selected if name not in aliases]
+    if unknown:
+        raise ValueError(
+            "unknown agent(s): "
+            + ", ".join(sorted(unknown))
+            + ". valid values: "
+            + ", ".join(sorted(aliases))
+        )
+    return selected
+
+
+def _prune_unselected_global_skills(selected_agents: tuple[str, ...]) -> None:
+    selected = set(selected_agents)
+    bundled = list_skills()
+    for agent_name, rel, _label, _subset in GLOBAL_AGENT_DIRS:
+        if agent_name in selected:
+            continue
+        agent_dir = HOME / rel
+        if not agent_dir.is_dir():
+            continue
+        for skill_name in bundled:
+            skill_path = agent_dir / skill_name
+            if skill_path.exists() or skill_path.is_symlink():
+                _remove_existing_skill_path(skill_path)
+
+
+def install_global_skills(mode: str, selected_agents: tuple[str, ...]) -> None:
+    selected = set(selected_agents)
+    for agent_name, rel, label, subset in GLOBAL_AGENT_DIRS:
+        if agent_name not in selected:
+            continue
         install_skills(HOME / rel, label, subset=subset, mode=mode)
-    _install_hermes_profiles(mode)
+    if "hermes" in selected:
+        _install_hermes_profiles(mode)
+    _prune_unselected_global_skills(selected_agents)
 
 
 def _install_hermes_profiles(mode: str) -> None:
@@ -504,7 +577,7 @@ def run_doctor(*, vault_override: str | None = None, project_dir: str | None = N
     partial_agents: list[str] = []
     full_agents = 0
     bundled_set = set(bundled)
-    for rel, label, _subset in GLOBAL_AGENT_DIRS:
+    for _agent_name, rel, label, _subset in GLOBAL_AGENT_DIRS:
         agent_dir = HOME / rel
         if not agent_dir.is_dir():
             continue
@@ -584,6 +657,7 @@ def _print_doctor(report: dict[str, object]) -> None:
 # ── Commands ─────────────────────────────────────────────────────────────────
 def cmd_setup(args: argparse.Namespace) -> int:
     mode = "copy" if args.copy else "symlink"
+    selected_agents = _normalize_agent_selection(args.agents)
     print("\n╔══════════════════════════════════════════════════╗")
     print("║         obsidian-wiki — Agent Setup              ║")
     print("╚══════════════════════════════════════════════════╝\n")
@@ -596,7 +670,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
 
     if not args.project_only:
         print()
-        install_global_skills(mode)
+        install_global_skills(mode, selected_agents)
 
     if args.project is not None:
         project_dir = Path(args.project or os.getcwd()).expanduser().resolve()
@@ -606,6 +680,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
     print("\n───────────────────────────────────────────────────")
     print(" Setup complete!\n")
     print(f" Skills installed: {n}  (mode: {mode})")
+    print(f" Agents:           {', '.join(selected_agents)}")
     if vault_path:
         print(f" Vault:            {vault_path}")
     print("\n Next steps:")
@@ -829,7 +904,7 @@ def cmd_info(args: argparse.Namespace) -> int:
     print()
     print("Agent skill install status:")
     bundled_set = set(bundled)
-    for rel, label, _subset in GLOBAL_AGENT_DIRS:
+    for _agent_name, rel, label, _subset in GLOBAL_AGENT_DIRS:
         agent_dir = HOME / rel
         if not agent_dir.is_dir():
             print(f"  {label}: not installed")
@@ -969,6 +1044,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 def _add_setup_args(sp: argparse.ArgumentParser) -> None:
     sp.add_argument("--vault", metavar="PATH", help="absolute path to your Obsidian vault")
+    sp.add_argument(
+        "--agents",
+        help="comma-separated global agent targets to install "
+        f"(default: {','.join(DEFAULT_GLOBAL_AGENTS)})",
+    )
     sp.add_argument(
         "--project",
         nargs="?",
